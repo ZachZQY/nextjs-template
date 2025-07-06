@@ -1,5 +1,5 @@
 import type { GraphQLClientConfig,RequestListener ,RequestLifecycle} from "graphql-ormify-client";
-import { graphqlOrmifyClientConfig as config } from "@/project-config";
+import { hasuraGraphqlClientConfig as config } from "@/project-config";
 export const graphqlOrmifyClientConfig: GraphQLClientConfig = {
   endpoint: config.endpoint,
   headers: config.headers,

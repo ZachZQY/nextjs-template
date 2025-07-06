@@ -1,6 +1,6 @@
 import graphqlOrmfyClientConfig from "../goc.config";
 
-export const graphqlOrmifyClientConfig = {
+export const hasuraGraphqlClientConfig = {
   endpoint: graphqlOrmfyClientConfig.endpoint,
   headers: graphqlOrmfyClientConfig.headers,
 };
