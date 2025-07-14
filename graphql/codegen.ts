@@ -1,9 +1,9 @@
-import graphqlOrmfyClientConfig from '../goc.config';
+import graphqlOrmfyClientConfig from "../goc.config";
 
 const endpoint = graphqlOrmfyClientConfig.endpoint;
 const headers = graphqlOrmfyClientConfig.headers || {};
 
-export default {
+const defaultConfig = {
   schema: [
     {
       [endpoint]: {
@@ -13,12 +13,14 @@ export default {
   ],
   documents: [],
   generates: {
-    './graphql/schema.graphql': {
-      plugins: ['schema-ast'],
+    "./graphql/schema.graphql": {
+      plugins: ["schema-ast"],
     },
     // 如需生成 types:
-    './src/types/graphql.ts': {
-      plugins: ['typescript'],
+    "./src/types/graphql.ts": {
+      plugins: ["typescript"],
     },
   },
 };
+
+export default defaultConfig;
