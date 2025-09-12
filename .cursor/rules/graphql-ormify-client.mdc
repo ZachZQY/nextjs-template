@@ -1,7 +1,5 @@
 ---
-description: 
-globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 项目的所有请求都应该由graphql-ormify-client进行处理
 对应npm文档链接：https://www.npmjs.com/package/graphql-ormify-client
