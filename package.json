@@ -6,7 +6,7 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --max-warnings 0",
     "download:schema": "graphql-codegen --config graphql/codegen.ts"
   },
   "dependencies": {
@@ -14,7 +14,7 @@
     "@alicloud/openapi-client": "^0.4.14",
     "graphql-ormify-client": "^1.0.5",
     "jsonwebtoken": "^9.0.2",
-    "next": "15.3.4",
+    "next": "^16.1.1",
     "proxy-agent": "^6.5.0",
     "qiniu": "^7.14.0",
     "react": "^19.0.0",
@@ -30,7 +30,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.3.4",
+    "eslint-config-next": "^16.1.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

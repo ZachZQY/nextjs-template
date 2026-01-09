@@ -3,14 +3,14 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   
-  // 在构建过程中完全禁用ESLint
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  
-  // 配置允许的图片域名
+  // 配置允许的图片域名（使用新的 remotePatterns 方式）
   images: {
-    domains: ['qiniu-storage.weweknow.com'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'qiniu-storage.weweknow.com',
+      },
+    ],
   },
 
   // 禁用静态资源缓存
