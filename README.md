@@ -2,6 +2,12 @@
 
 本项目为 Next.js + GraphQL 全栈开发模板，支持服务端渲染、API 路由、类型安全的 GraphQL 客户端，内置缓存、文件上传、第三方服务集成等常用功能，适合企业级应用开发。
 
+## 系统要求
+
+- **Node.js**：20.9 或更高版本
+- **TypeScript**：5.1 或更高版本
+- **包管理器**：npm、pnpm 或 yarn
+
 ---
 
 ## 快速启动项目
@@ -51,6 +57,7 @@ yarn dev
    ```bash
    npm run lint
    ```
+   > **注意**：Next.js 16 已移除 `next lint` 命令，项目已配置为直接使用 ESLint。
 
 ---
 
@@ -197,6 +204,19 @@ export async function GET(request: NextRequest) {
 }
 ```
 
+**Next.js 16 注意事项**：如果需要在 API 路由中使用 `cookies()`、`headers()` 或 `draftMode()`，必须使用 `await`：
+
+```ts
+// Next.js 16 中的正确用法
+import { cookies, headers } from 'next/headers';
+
+export async function GET() {
+  const cookieStore = await cookies();
+  const headersList = await headers();
+  // 使用 cookieStore 和 headersList...
+}
+```
+
 ### 2. 类型定义用法
 
 ```ts
@@ -327,9 +347,11 @@ export async function GET() {
 
 ### 5. 开发工具
 - TypeScript 类型检查
-- ESLint 代码规范检查
+- ESLint 代码规范检查（Next.js 16 已移除 `next lint` 命令，直接使用 ESLint）
 - 自动 GraphQL 类型生成
 - 热重载开发服务器
+- **Turbopack**：默认打包器，构建速度提升 2-5 倍
+- **React 19**：支持 View Transitions API、`useEffectEvent()` Hook 等新特性
 
 ---
 
@@ -340,12 +362,68 @@ export async function GET() {
 - 缓存、请求、GraphQL 客户端等统一用 config-lib/ 目录下工具，API 推荐全部加缓存。
 - 每次后端 schema 变更后，务必同步类型。
 - 使用 Next.js App Router 的新特性，如服务端组件、流式渲染等。
+- **Next.js 16 重要变更**：在 API 路由或服务器组件中使用 `cookies()`、`headers()`、`draftMode()` 时，需要使用 `await`（例如：`const cookieStore = await cookies()`）。
 
 ---
 
 ## 环境变量配置
 
-创建 `.env.local` 文件，配置以下环境变量：
+### 为什么使用 `.env.local` 而不是 `.env`？
+
+在 Next.js 中，环境变量文件的优先级从高到低为：
+1. `.env.local` - 本地环境变量（所有环境），**优先级最高**
+2. `.env.development` / `.env.production` - 特定环境的变量
+3. `.env` - 默认环境变量（优先级最低）
+
+**使用 `.env.local` 的优势：**
+- ✅ **优先级最高**：会覆盖 `.env` 和其他环境变量文件中的相同变量
+- ✅ **安全性更好**：默认会被 `.gitignore` 忽略，不会意外提交敏感信息到代码仓库
+- ✅ **适合本地开发**：每个开发者可以有自己的本地配置，不会影响其他环境
+- ✅ **不会被覆盖**：即使项目中有 `.env` 文件，`.env.local` 的值也会优先使用
+
+### `.env.local` 如何生效？
+
+**Next.js 自动加载机制：**
+
+Next.js **内置支持**自动加载 `.env.local` 文件，无需手动配置 `dotenv`。当你运行 Next.js 应用时（`next dev`、`next build`、`next start`），Next.js 会：
+
+1. **自动读取** `.env.local` 文件（以及其他 `.env*` 文件）
+2. **自动注入**到 `process.env` 中
+3. **按优先级**合并多个环境变量文件的值
+
+这意味着：
+- ✅ **在 Next.js 应用中**（API 路由、服务器组件、`next.config.ts` 等），可以直接使用 `process.env.XXX` 读取环境变量
+- ✅ **无需手动导入** `dotenv` 包或调用 `dotenv.config()`
+- ✅ **在客户端代码中**，只有以 `NEXT_PUBLIC_` 开头的变量才会暴露给浏览器
+
+**示例：**
+
+```ts
+// src/config-lib/qiniu/config.ts
+export const qiniuConfig = {
+  accessKey: process.env.QINIU_ACCESS_KEY || "",  // ✅ 自动从 .env.local 读取
+  secretKey: process.env.QINIU_SECRET_KEY || "",  // ✅ 自动从 .env.local 读取
+  bucket: process.env.QINIU_BUCKET || "",
+};
+
+// src/app/api/upload/route.ts
+export async function POST() {
+  const apiKey = process.env.SOME_API_KEY;  // ✅ 自动从 .env.local 读取
+  // ...
+}
+```
+
+> **注意**：如果你的项目中有**独立的 Node.js 脚本**（不通过 Next.js 运行），则需要手动使用 `dotenv` 来加载环境变量文件。
+
+### 配置步骤
+
+如果项目中有 `.env.example` 模板文件，可以复制后重命名为 `.env.local`：
+
+```bash
+cp .env.example .env.local
+```
+
+然后编辑 `.env.local` 文件，配置以下环境变量：
 
 ```bash
 # JWT 配置
@@ -367,6 +445,8 @@ WX_MCH_ID=your-merchant-id
 WX_MCH_KEY=your-merchant-key
 ```
 
+> **注意**：`.env.local` 文件已配置在 `.gitignore` 中，不会被提交到代码仓库。请确保不要将包含真实密钥的 `.env.local` 文件提交到 Git。
+
 ---
 
 ## 常见目录/文件 FAQ
@@ -374,14 +454,17 @@ WX_MCH_KEY=your-merchant-key
 - **app/ 下可以有多级目录吗？** 可以，Next.js App Router 支持嵌套路由，建议按功能模块组织。
 - **types/ 下如何拆分业务类型？** 建议 tables/ 下每个表一个 ts 文件，便于维护和自动补全。
 - **API 路由可以有多个方法吗？** 可以，在 route.ts 中导出 GET、POST、PUT、DELETE 等函数。
-- **如何配置静态资源？** 在 `next.config.ts` 中配置 `images.domains` 等选项。
+- **如何配置静态资源？** 在 `next.config.ts` 中配置 `images.remotePatterns`（Next.js 16 已废弃 `images.domains`，请使用 `images.remotePatterns`）。
 - **config-lib/ 和 utils/ 有什么区别？** config-lib/ 是当前主力的配置与工具库目录，包含所有核心功能模块。
+- **`.env.local` 文件如何生效？`process.env` 能读取吗？** Next.js 会**自动加载** `.env.local` 文件并注入到 `process.env` 中，无需手动配置 `dotenv`。在 API 路由、服务器组件、配置文件中可以直接使用 `process.env.XXX` 读取环境变量。
+- **Next.js 16 的主要变化有哪些？** Next.js 16 已启用 Turbopack 作为默认打包器，内置支持 React 19，并引入了新的缓存 API。在 API 路由中使用 `cookies()`、`headers()` 等 API 时需要使用 `await`。配置方面，已废弃 `images.domains`，请使用 `images.remotePatterns`。
 
 ---
 
 ## 技术栈
 
-- **框架**：Next.js 15.3.4 (App Router)
+- **框架**：Next.js 16.1.1 (App Router, 已启用 Turbopack)
+- **React**：19.1.0
 - **语言**：TypeScript 5
 - **样式**：Tailwind CSS 4
 - **GraphQL**：graphql-ormify-client 1.0.5
@@ -389,6 +472,8 @@ WX_MCH_KEY=your-merchant-key
 - **存储**：七牛云 (qiniu)
 - **短信**：阿里云短信服务
 - **支付**：微信支付 (wechatpay-node-v3)
+
+> **注意**：项目已升级到 Next.js 16，已启用 Turbopack 作为默认打包器，支持 React 19 新特性。在 API 路由中使用 `cookies()`、`headers()` 等 API 时需要使用 `await`。
 
 ---
 
