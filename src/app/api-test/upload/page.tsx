@@ -19,7 +19,8 @@ export default function UploadTestPage() {
   const [results, setResults] = useState<UploadResult[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadType, setUploadType] = useState<'binary' | 'form'>('form');
+  const [uploadType, setUploadType] = useState<'binary' | 'form' | 'direct'>('direct');
+  const [uploadProgress, setUploadProgress] = useState<Record<number, number>>({});
 
   // 处理文件选择
   const handleFileSelect = (files: FileList | null) => {
@@ -53,21 +54,30 @@ export default function UploadTestPage() {
   // 上传文件
   const handleUpload = async (files: File[]) => {
     setUploading(true);
+    setUploadProgress({});
     const newResults: UploadResult[] = [];
 
     try {
       if (uploadType === 'binary') {
         // 二进制上传
-        for (const file of files) {
-          const result = await uploadBinary(file);
+        for (let i = 0; i < files.length; i++) {
+          const result = await uploadBinary(files[i]);
           newResults.push(result);
         }
-      } else {
+      } else if (uploadType === 'form') {
         // 表单上传
         const result = await uploadForm(files);
         if (Array.isArray(result.data)) {
           newResults.push(...result.data.map(item => ({ ...result, data: item })));
         } else {
+          newResults.push(result);
+        }
+      } else {
+        // 客户端直传
+        for (let i = 0; i < files.length; i++) {
+          const result = await uploadDirect(files[i], i, (progress) => {
+            setUploadProgress(prev => ({ ...prev, [i]: progress }));
+          });
           newResults.push(result);
         }
       }
@@ -80,11 +90,12 @@ export default function UploadTestPage() {
 
     setResults(prev => [...prev, ...newResults]);
     setUploading(false);
+    setUploadProgress({});
   };
 
   // 二进制上传
   const uploadBinary = async (file: File): Promise<UploadResult> => {
-    const response = await fetch('/api/upload/binary', {
+    const response = await fetch('/api/qiniu-upload/binary', {
       method: 'POST',
       headers: {
         'x-filename': encodeURIComponent(file.name),
@@ -103,13 +114,112 @@ export default function UploadTestPage() {
       formData.append('file', file);
     });
 
-    const response = await fetch('/api/upload/form', {
+    const response = await fetch('/api/qiniu-upload/form', {
       method: 'POST',
       body: formData,
     });
 
     const result = await response.json();
     return result;
+  };
+
+  // 客户端直传
+  const uploadDirect = async (
+    file: File,
+    fileIndex: number,
+    onProgress?: (progress: number) => void
+  ): Promise<UploadResult> => {
+    try {
+      // 1. 获取上传凭证
+      const tokenResponse = await fetch('/api/qiniu-upload/token', {
+        method: 'GET',
+      });
+
+      if (!tokenResponse.ok) {
+        throw new Error('获取上传凭证失败');
+      }
+
+      const tokenData = await tokenResponse.json();
+      if (!tokenData.success || !tokenData.data) {
+        throw new Error(tokenData.message || '获取上传凭证失败');
+      }
+
+      const { token, uploadUrl, baseUrl, dirPath } = tokenData.data;
+
+      // 2. 生成文件 key
+      const ext = file.name.split('.').pop() || 'file';
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 8);
+      const path = dirPath || 'uploads/';
+      const key = `${path}${timestamp}-${random}.${ext}`;
+
+      // 3. 上传到七牛云
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+
+        // 监听上传进度
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable && onProgress) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            onProgress(percent);
+          }
+        });
+
+        // 监听完成
+        xhr.addEventListener('load', () => {
+          if (xhr.status === 200) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              if (data.key) {
+                const fileUrl = baseUrl ? `${baseUrl}/${data.key}` : data.key;
+                resolve({
+                  success: true,
+                  message: '文件上传成功',
+                  data: {
+                    path: '/' + data.key,
+                    type: file.type || 'unknown',
+                    url: fileUrl,
+                  },
+                });
+              } else if (data.error) {
+                reject(new Error(data.error || '上传失败'));
+              } else {
+                reject(new Error('上传失败：响应数据异常'));
+              }
+            } catch (error) {
+              reject(new Error('解析响应数据失败'));
+            }
+          } else {
+            try {
+              const errorData = JSON.parse(xhr.responseText);
+              reject(new Error(errorData.error || errorData.message || `上传失败：HTTP ${xhr.status}`));
+            } catch {
+              reject(new Error(`上传失败：HTTP ${xhr.status}`));
+            }
+          }
+        });
+
+        // 监听错误
+        xhr.addEventListener('error', () => {
+          reject(new Error('上传请求失败'));
+        });
+
+        // 构建 FormData
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('token', token);
+        formData.append('key', key);
+
+        // 发送请求
+        xhr.open('POST', uploadUrl);
+        xhr.send(formData);
+      });
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : '上传失败',
+      };
+    }
   };
 
   // 清除结果
@@ -139,13 +249,23 @@ export default function UploadTestPage() {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               上传方式
             </label>
-            <div className="flex space-x-4">
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  value="direct"
+                  checked={uploadType === 'direct'}
+                  onChange={(e) => setUploadType(e.target.value as 'form' | 'binary' | 'direct')}
+                  className="mr-2"
+                />
+                客户端直传 (推荐)
+              </label>
               <label className="flex items-center">
                 <input
                   type="radio"
                   value="form"
                   checked={uploadType === 'form'}
-                  onChange={(e) => setUploadType(e.target.value as 'form' | 'binary')}
+                  onChange={(e) => setUploadType(e.target.value as 'form' | 'binary' | 'direct')}
                   className="mr-2"
                 />
                 表单上传 (FormData)
@@ -155,7 +275,7 @@ export default function UploadTestPage() {
                   type="radio"
                   value="binary"
                   checked={uploadType === 'binary'}
-                  onChange={(e) => setUploadType(e.target.value as 'form' | 'binary')}
+                  onChange={(e) => setUploadType(e.target.value as 'form' | 'binary' | 'direct')}
                   className="mr-2"
                 />
                 二进制上传 (Binary)
@@ -220,11 +340,32 @@ export default function UploadTestPage() {
             disabled={uploading}
           />
 
-          {/* 上传状态 */}
+          {/* 上传状态和进度 */}
           {uploading && (
-            <div className="mt-4 flex items-center justify-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-2 text-gray-600">上传中...</span>
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <span className="ml-2 text-gray-600">上传中...</span>
+              </div>
+              {/* 上传进度条（仅客户端直传时显示） */}
+              {uploadType === 'direct' && Object.keys(uploadProgress).length > 0 && (
+                <div className="space-y-2">
+                  {Object.entries(uploadProgress).map(([index, progress]) => (
+                    <div key={index} className="w-full">
+                      <div className="flex justify-between text-sm text-gray-600 mb-1">
+                        <span>文件 {parseInt(index) + 1}</span>
+                        <span>{progress}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${progress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -331,11 +472,12 @@ export default function UploadTestPage() {
           <div className="mt-8 bg-gray-50 rounded-lg p-4">
             <h3 className="text-lg font-medium text-gray-900 mb-2">使用说明</h3>
             <div className="text-sm text-gray-600 space-y-1">
-              <p>• <strong>表单上传:</strong> 使用 FormData 格式，支持多文件上传</p>
-              <p>• <strong>二进制上传:</strong> 直接上传文件二进制数据，通过 header 传递文件名</p>
+              <p>• <strong>客户端直传（推荐）:</strong> 文件直接上传到七牛云，减轻服务器压力，支持上传进度显示</p>
+              <p>• <strong>表单上传:</strong> 使用 FormData 格式，文件通过后端中转上传到七牛云，支持多文件上传</p>
+              <p>• <strong>二进制上传:</strong> 直接上传文件二进制数据，通过 header 传递文件名，文件通过后端中转上传</p>
               <p>• 支持拖拽上传和点击选择文件</p>
               <p>• 上传成功后可以预览和下载文件</p>
-              <p>• 确保已正确配置七牛云环境变量</p>
+              <p>• 确保已正确配置七牛云环境变量（QINIU_ACCESS_KEY、QINIU_SECRET_KEY、QINIU_BUCKET）</p>
             </div>
           </div>
         </div>

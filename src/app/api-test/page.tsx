@@ -6,10 +6,10 @@ export default function ApiTestPage() {
   const testModules = [
     {
       title: '文件上传测试',
-      description: '测试七牛云文件上传功能，支持二进制和表单上传',
+      description: '测试七牛云文件上传功能，支持客户端直传、二进制和表单上传',
       href: '/api-test/upload',
       icon: '📁',
-      features: ['二进制上传', '表单上传', '多文件上传', '拖拽上传', '预览下载']
+      features: ['客户端直传', '二进制上传', '表单上传', '多文件上传', '拖拽上传', '上传进度', '预览下载']
     },
     {
       title: '认证测试',
@@ -96,7 +96,8 @@ export default function ApiTestPage() {
             <div>
               <span className="font-medium">技术栈:</span>
               <ul className="mt-1 space-y-1">
-                <li>• Next.js 15.3.4 (App Router)</li>
+                <li>• Next.js 16.1.1 (App Router, Turbopack)</li>
+                <li>• React 19.0.0</li>
                 <li>• TypeScript 5</li>
                 <li>• Tailwind CSS 4</li>
                 <li>• GraphQL (graphql-ormify-client)</li>

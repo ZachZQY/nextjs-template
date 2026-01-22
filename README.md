@@ -1,6 +1,26 @@
 # nextjs-template
 
-本项目为 Next.js + GraphQL 全栈开发模板，支持服务端渲染、API 路由、类型安全的 GraphQL 客户端，内置缓存、文件上传、第三方服务集成等常用功能，适合企业级应用开发。
+本项目为 **Next.js 后端框架模板**，基于 Next.js + GraphQL 构建，提供 API 路由、类型安全的 GraphQL 客户端、文件上传、第三方服务集成等功能，适合作为后端服务使用。
+
+## 项目概述
+
+### 主要功能
+
+- ✅ **GraphQL API 服务**：基于 Hasura GraphQL 的类型安全 API
+- ✅ **文件上传**：支持服务端上传和客户端直传两种方式（七牛云）
+- ✅ **第三方服务集成**：阿里云短信、微信小程序、微信支付等
+- ✅ **JWT 认证**：完整的用户认证和授权方案
+- ✅ **类型安全**：自动生成 GraphQL 类型，TypeScript 全程类型检查
+
+### 使用流程
+
+1. **配置 GraphQL 端点**：在 `goc.config.ts` 中配置你的 GraphQL 服务地址
+2. **配置环境变量**：复制 `env.example` 为 `.env.local`，填写各项服务的密钥
+3. **拉取 Schema**：运行 `npm run download:schema` 生成类型定义
+4. **开发 API**：在 `src/app/api/` 下创建 API 路由
+5. **部署上线**：构建并部署到生产环境
+
+详细步骤请参考下方「快速启动项目」章节。
 
 ## 系统要求
 
@@ -36,7 +56,9 @@
    ```
 
 5. **配置环境变量**
-   - 创建 `.env.local` 文件，配置必要的环境变量（如 JWT 密钥、第三方服务密钥等）。
+   - 复制 `env.example` 为 `.env.local`：`cp env.example .env.local`
+   - 编辑 `.env.local` 文件，填写实际的环境变量值
+   - 详细配置说明请参考下方「环境变量配置」章节
 
 6. **运行开发环境**
 ```bash
@@ -73,11 +95,13 @@ nextjs-template/
             route.ts        # 手机号登录
           wx-login/
             route.ts        # 微信登录
-        upload/             # 文件上传相关 API
+        qiniu-upload/      # 七牛云文件上传相关 API
           binary/
-            route.ts        # 二进制文件上传
+            route.ts        # 二进制文件上传（服务端上传）
           form/
-            route.ts        # 表单文件上传
+            route.ts        # 表单文件上传（服务端上传）
+          token/
+            route.ts        # 获取七牛云上传凭证（客户端直传）
       globals.css           # 全局样式
       layout.tsx            # 根布局组件
       page.tsx              # 首页
@@ -86,9 +110,6 @@ nextjs-template/
       ali/                  # 阿里云服务
         AliSms.ts           # 短信服务
         config.ts           # 配置
-      cache-store/          # 缓存工具
-        cache-store.ts      # 缓存实现
-        config.ts           # 缓存配置
       hasura/               # Hasura 相关
         config.ts           # Hasura 配置
         HasuraJwtToken.ts   # JWT Token 处理
@@ -126,7 +147,7 @@ nextjs-template/
 | 目录/文件 | 说明 |
 |-----------|------|
 | src/app/ | Next.js App Router，包含页面和 API 路由，按功能模块分子目录 |
-| src/config-lib/ | 配置与工具库，缓存、GraphQL 客户端、第三方服务等 |
+| src/config-lib/ | 配置与工具库，GraphQL 客户端、第三方服务等 |
 | src/types/ | 全局类型定义，graphql.ts 为自动生成类型，建议 tables/ 拆分业务类型 |
 | src/project-config.ts | 项目配置（如 endpoint、header，建议仅工具脚本用） |
 | graphql/schema.graphql | GraphQL schema 文件，自动生成 |
@@ -148,7 +169,7 @@ nextjs-template/
   - 统一使用英文小写+中划线（-），如 `route.ts`、`user-login/`。
   - API 路由按功能模块分子目录，每个路由目录包含 `route.ts`。
 - **工具库文件**：
-  - 统一使用英文小写+中划线（-），如 `cache-store.ts`、`hasura-graphql-client.ts`。
+  - 统一使用英文小写+中划线（-），如 `hasura-graphql-client.ts`。
   - 现已全部集中在 `config-lib/` 目录下。
 - **类型定义文件**：
   - 统一使用英文小写+中划线或下划线，自动生成类型为 `graphql.ts`，业务类型建议细分到 `tables/` 子目录。
@@ -162,7 +183,7 @@ nextjs-template/
 | 页面目录     | 小写+中划线        | user-center/              |
 | 页面文件     | 小写+中划线        | page.tsx, layout.tsx      |
 | API 路由     | 小写+中划线        | route.ts, user-login/     |
-| 工具库文件   | 小写+中划线        | cache-store.ts            |
+| 工具库文件   | 小写+中划线        | hasura-graphql-client.ts  |
 | 类型定义文件 | 小写+中划线/下划线 | graphql.ts, tables/user.ts|
 | 配置文件     | 小写+中划线        | next.config.ts            |
 
@@ -182,6 +203,8 @@ nextjs-template/
 
 ### 1. API 路由用法
 
+**优先使用 `execute` 方法**，这是 graphql-ormify-client 推荐的方式，提供最大的灵活性：
+
 ```ts
 // src/app/api/user/profile/route.ts
 import { NextRequest, NextResponse } from 'next/server';
@@ -191,13 +214,21 @@ import type { Users } from '@/types/graphql';
 export async function GET(request: NextRequest) {
   try {
     const client = getHasuraClient();
-    const users = await client.datas<Users>({
-      table: 'users',
-      args: { limit: 10 },
-      datas_fields: ['id', 'name', 'email'],
+    const query = `
+      query GetUsers {
+        users(limit: 10, order_by: { created_at: desc }) {
+          id
+          name
+          email
+        }
+      }
+    `;
+    
+    const result = await client.execute<{ users: Users[] }>({
+      query,
     });
     
-    return NextResponse.json({ users });
+    return NextResponse.json({ users: result.users });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 });
   }
@@ -231,6 +262,8 @@ export type UserFields = UserField[];
 
 ### 3. 页面组件用法
 
+**优先使用 `execute` 方法**执行 GraphQL 查询：
+
 ```tsx
 // src/app/users/page.tsx
 'use client';
@@ -241,16 +274,33 @@ import type { User } from '@/types/tables/user';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const fetchUsers = async () => {
-      const client = getHasuraClient();
-      const data = await client.datas<User>({
-        table: 'users',
-        args: { limit: 10 },
-        datas_fields: ['id', 'name', 'email'],
-      });
-      setUsers(data);
+      setLoading(true);
+      try {
+        const client = getHasuraClient();
+        const query = `
+          query GetUsers {
+            users(limit: 10, order_by: { created_at: desc }) {
+              id
+              name
+              email
+            }
+          }
+        `;
+        
+        const result = await client.execute<{ users: User[] }>({
+          query,
+        });
+        
+        setUsers(result.users);
+      } catch (error) {
+        console.error('获取用户列表失败:', error);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchUsers();
@@ -259,39 +309,115 @@ export default function UsersPage() {
   return (
     <div>
       <h1>用户列表</h1>
-      <ul>
-        {users.map(user => (
-          <li key={user.id}>{user.name}</li>
-        ))}
-      </ul>
+      {loading ? (
+        <div>加载中...</div>
+      ) : (
+        <ul>
+          {users.map(user => (
+            <li key={user.id}>{user.name}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 ```
 
-### 4. 缓存工具用法
+### 4. 文件上传用法
+
+#### 4.1 服务端上传（二进制/表单）
 
 ```ts
-// src/app/api/cached-data/route.ts
-import { NextResponse } from 'next/server';
-import cacheStore from '@/config-lib/cache-store/cache-store';
-import { getHasuraClient } from '@/config-lib/hasura-graphql-client/hasura-graphql-client';
+// src/app/api/qiniu-upload/binary/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { QiniuUploader } from '@/config-lib/qiniu/QiniuUploader';
+import { qiniuConfig } from '@/config-lib/qiniu/config';
 
-const getCachedData = cacheStore.cache(
-  async (args: Record<string, any> = {}) => {
-    const client = getHasuraClient();
-    return await client.datas({
-      table: 'some_table',
-      args,
-      datas_fields: ['id', 'name'],
+const uploader = new QiniuUploader(qiniuConfig);
+
+export async function POST(request: NextRequest) {
+  try {
+    const xFilename = request.headers.get('x-filename') || 'file';
+    const arrayBuffer = await request.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const file = new File([buffer], decodeURIComponent(xFilename));
+    const result = await uploader.uploadFile(file);
+    return NextResponse.json({
+      success: true,
+      message: '文件上传成功',
+      data: result,
     });
-  },
-  { duration: 5 * 60 * 1000 } // 5分钟缓存
-);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: error instanceof Error ? error.message : '上传失败',
+      },
+      { status: 500 }
+    );
+  }
+}
+```
 
-export async function GET() {
-  const data = await getCachedData({ limit: 10 });
-  return NextResponse.json({ data });
+#### 4.2 客户端直传（获取上传凭证）
+
+```ts
+// src/app/api/qiniu-upload/token/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import * as qiniu from "qiniu";
+import { qiniuConfig } from "@/config-lib/qiniu/config";
+
+/**
+ * 根据zone获取七牛云上传地址
+ * 注意：七牛云的上传地址格式是 up-{zone}.qiniup.com
+ */
+function getUploadUrl(zone?: string): string {
+  const zoneMap: Record<string, string> = {
+    z0: "https://up-z0.qiniup.com", // 华东
+    z1: "https://up-z1.qiniup.com", // 华北
+    z2: "https://up-z2.qiniup.com", // 华南
+    na0: "https://up-na0.qiniup.com", // 北美
+    as0: "https://up-as0.qiniup.com", // 东南亚
+  };
+  
+  const zoneKey = zone || qiniuConfig.zone || "z2"; // 默认使用z2（华南）
+  return zoneMap[zoneKey] || zoneMap.z2;
+}
+
+/**
+ * 获取七牛云上传Token
+ * 用于前端直接上传到七牛云，避免经过后端中转
+ * 支持大文件上传、后台上传、断点续传
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const mac = new qiniu.auth.digest.Mac(qiniuConfig.accessKey, qiniuConfig.secretKey);
+    const putPolicy = new qiniu.rs.PutPolicy({
+      scope: qiniuConfig.bucket,
+      expires: 3600, // token有效期1小时
+    });
+    const uploadToken = putPolicy.uploadToken(mac);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        token: uploadToken,
+        bucket: qiniuConfig.bucket,
+        baseUrl: qiniuConfig.baseUrl,
+        dirPath: qiniuConfig.dirPath,
+        uploadUrl: getUploadUrl(qiniuConfig.zone), // 返回上传地址
+      },
+    });
+  } catch (error) {
+    console.error("生成七牛云token失败:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: error instanceof Error ? error.message : "生成token失败",
+      },
+      { status: 500 }
+    );
+  }
 }
 ```
 
@@ -329,23 +455,19 @@ export async function GET() {
 - 支持查询、变更、订阅等操作
 - 内置缓存和请求监听
 
-### 2. 缓存系统
-- 基于内存的智能缓存
-- 支持自定义缓存时长和强制刷新
-- 自动哈希键生成
-
-### 3. 第三方服务集成
+### 2. 第三方服务集成
 - **阿里云短信服务**：支持短信发送
 - **七牛云存储**：支持文件上传和管理
 - **微信服务**：支持小程序授权和支付
 - **JWT 认证**：支持用户认证和授权
 
-### 4. 文件上传
-- 支持二进制和表单文件上传
+### 3. 文件上传
+- **服务端上传**：支持二进制和表单文件上传，文件通过后端上传到七牛云
+- **客户端直传**：提供上传凭证接口，客户端可直接上传到七牛云，减轻服务器压力
 - 集成七牛云存储
 - 支持多种文件类型
 
-### 5. 开发工具
+### 4. 开发工具
 - TypeScript 类型检查
 - ESLint 代码规范检查（Next.js 16 已移除 `next lint` 命令，直接使用 ESLint）
 - 自动 GraphQL 类型生成
@@ -359,7 +481,9 @@ export async function GET() {
 
 - API 路由、类型、工具、页面结构建议严格按本规范组织，便于团队协作和维护。
 - 业务类型建议基于自动生成的 GraphQL 类型二次封装，字段名类型用 `keyof` 自动推导。
-- 缓存、请求、GraphQL 客户端等统一用 config-lib/ 目录下工具，API 推荐全部加缓存。
+- **GraphQL 请求优先使用 `execute` 方法**，提供最大的灵活性和类型安全，尽量不使用快捷方法（如 `datas`、`data` 等）。
+- GraphQL 客户端等统一用 config-lib/ 目录下工具。
+- 文件上传优先使用客户端直传方式，减少服务器压力。
 - 每次后端 schema 变更后，务必同步类型。
 - 使用 Next.js App Router 的新特性，如服务端组件、流式渲染等。
 - **Next.js 16 重要变更**：在 API 路由或服务器组件中使用 `cookies()`、`headers()`、`draftMode()` 时，需要使用 `await`（例如：`const cookieStore = await cookies()`）。
@@ -406,8 +530,8 @@ export const qiniuConfig = {
   bucket: process.env.QINIU_BUCKET || "",
 };
 
-// src/app/api/upload/route.ts
-export async function POST() {
+// src/app/api/qiniu-upload/token/route.ts
+export async function GET() {
   const apiKey = process.env.SOME_API_KEY;  // ✅ 自动从 .env.local 读取
   // ...
 }
@@ -417,33 +541,101 @@ export async function POST() {
 
 ### 配置步骤
 
-如果项目中有 `.env.example` 模板文件，可以复制后重命名为 `.env.local`：
+#### 1. 创建环境变量文件
+
+项目提供了 `env.example` 模板文件，复制后重命名为 `.env.local`：
 
 ```bash
-cp .env.example .env.local
+cp env.example .env.local
 ```
 
-然后编辑 `.env.local` 文件，配置以下环境变量：
+#### 2. 配置环境变量
+
+编辑 `.env.local` 文件，根据实际需求填写各项配置。以下是各服务的详细配置说明：
+
+##### Hasura GraphQL 配置
 
 ```bash
-# JWT 配置
-JWT_SECRET=your-jwt-secret
+# JWT Secret（用于生成 JWT Token，服务端使用）
+# 配置文件: src/config-lib/hasura/config.ts
+HASURA_JWT_SECRET=your-jwt-secret-key-here
+```
 
-# 阿里云短信配置
-ALI_ACCESS_KEY_ID=your-access-key-id
-ALI_ACCESS_KEY_SECRET=your-access-key-secret
+##### 阿里云短信服务配置
 
-# 七牛云配置
+```bash
+# 配置文件: src/config-lib/ali/config.ts
+ALI_SMS_ACCESS_KEY_ID=your-ali-sms-access-key-id
+ALI_SMS_ACCESS_KEY_SECRET=your-ali-sms-access-key-secret
+```
+
+##### 七牛云存储配置
+
+```bash
+# 必需配置
 QINIU_ACCESS_KEY=your-qiniu-access-key
 QINIU_SECRET_KEY=your-qiniu-secret-key
 QINIU_BUCKET=your-bucket-name
 
-# 微信配置
+# 可选配置
+# CDN 域名，用于拼接文件访问 URL
+QINIU_BASE_URL=https://your-cdn-domain.com
+# 存储目录路径，自动生成 key 时使用
+QINIU_DIR_PATH=uploads/
+# 区域配置（z0:华东, z1:华北, z2:华南, na0:北美, as0:东南亚）
+# 如果不配置，默认使用 z2（华南）
+QINIU_ZONE=z2
+```
+
+##### 微信小程序配置
+
+```bash
+# 配置文件: src/config-lib/weixin/config.ts
 WX_APP_ID=your-wechat-app-id
 WX_APP_SECRET=your-wechat-app-secret
-WX_MCH_ID=your-merchant-id
-WX_MCH_KEY=your-merchant-key
 ```
+
+##### 微信支付配置
+
+```bash
+# 配置文件: src/config-lib/weixin/config.ts
+WX_PAY_MCHID=your-merchant-id          # 商户号
+WX_PAY_APPID=your-wechat-pay-appid     # 支付 AppID
+WX_PAY_SERIAL=your-certificate-serial-number  # 证书序列号
+WX_PAY_PRIVATE_KEY=your-private-key-here      # 私钥（PEM 格式，使用 \n 表示换行）
+WX_PAY_APIV3_KEY=your-apiv3-key-here         # APIv3 密钥
+WX_PAY_NOTIFY_URL=https://your-domain.com/api/weixin/pay/notify  # 支付回调地址
+```
+
+##### 客户端环境变量（可选）
+
+如果需要在前端代码中访问环境变量，必须以 `NEXT_PUBLIC_` 开头：
+
+```bash
+# 客户端可访问的 API 地址
+NEXT_PUBLIC_API_URL=https://api.your-domain.com
+NEXT_PUBLIC_APP_NAME=My App
+NEXT_PUBLIC_APP_VERSION=1.0.0
+```
+
+> **⚠️ 安全提示**：不要在客户端环境变量中暴露敏感信息（如 API Secret、私钥等）
+
+#### 3. 生产环境配置
+
+**Vercel 部署：**
+1. 进入 Vercel Dashboard > 项目 Settings > Environment Variables
+2. 添加所有必需的环境变量
+3. 为 Production、Preview、Development 环境分别配置
+
+**其他平台：**
+根据部署平台的要求，在平台的环境变量配置界面中添加相应的环境变量。
+
+#### 4. 环境变量使用规则
+
+- ✅ **服务端环境变量**：只能在 API 路由、Server Components、`next.config.ts` 中使用
+- ✅ **客户端环境变量**：必须以 `NEXT_PUBLIC_` 开头，可在客户端代码中使用
+- ✅ **自动加载**：Next.js 会自动加载 `.env.local`，无需手动配置
+- ✅ **优先级**：`.env.local` > `.env.development`/`.env.production` > `.env`
 
 > **注意**：`.env.local` 文件已配置在 `.gitignore` 中，不会被提交到代码仓库。请确保不要将包含真实密钥的 `.env.local` 文件提交到 Git。
 
