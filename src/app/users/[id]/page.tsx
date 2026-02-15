@@ -29,9 +29,7 @@ export default function UserDetailPage() {
               mobile
               avatar_url
               bio
-              gold_credit
-              silver_credit
-              member_type_id
+              email
               created_at
               updated_at
             }
@@ -71,10 +69,6 @@ export default function UserDetailPage() {
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
-
-  const formatCredit = (credit: any) => {
-    return credit ? Number(credit).toLocaleString() : '0';
   };
 
   if (loading) {
@@ -135,7 +129,7 @@ export default function UserDetailPage() {
                   <img
                     className="h-24 w-24 rounded-full object-cover"
                     src={user.avatar_url}
-                    alt={user.nickname}
+                    alt={user.nickname ?? ''}
                   />
                 ) : (
                   <div className="h-24 w-24 rounded-full bg-gray-300 flex items-center justify-center">
@@ -164,40 +158,8 @@ export default function UserDetailPage() {
                       </div>
                       
                       <div>
-                        <label className="text-sm font-medium text-gray-500">会员类型</label>
-                        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                          类型 {user.member_type_id}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">积分信息</h3>
-                    
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                        <div className="flex items-center">
-                          <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center mr-3">
-                            <span className="text-white text-sm font-medium">💰</span>
-                          </div>
-                          <span className="text-sm font-medium text-gray-700">金积分</span>
-                        </div>
-                        <span className="text-lg font-semibold text-yellow-800">
-                          {formatCredit(user.gold_credit)}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center">
-                          <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center mr-3">
-                            <span className="text-white text-sm font-medium">🪙</span>
-                          </div>
-                          <span className="text-sm font-medium text-gray-700">银积分</span>
-                        </div>
-                        <span className="text-lg font-semibold text-gray-800">
-                          {formatCredit(user.silver_credit)}
-                        </span>
+                        <label className="text-sm font-medium text-gray-500">邮箱</label>
+                        <p className="text-gray-900">{user.email || '—'}</p>
                       </div>
                     </div>
                   </div>
