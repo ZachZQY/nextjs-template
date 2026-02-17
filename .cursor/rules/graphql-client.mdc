@@ -1,7 +1,5 @@
 ---
-description: 项目 GraphQL 请求使用自封装的 graphql-client
-globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 项目的 GraphQL 请求统一使用 config-lib 下的自封装客户端：
 
