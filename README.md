@@ -113,9 +113,10 @@ nextjs-template/
       hasura/               # Hasura 相关
         config.ts           # Hasura 配置
         HasuraJwtToken.ts   # JWT Token 处理
-      hasura-graphql-client/ # GraphQL 客户端
-        hasura-graphql-client.ts # 客户端实例
-        config.ts           # 客户端配置
+      graphql-client/       # GraphQL 通用客户端（含默认实例）
+        graphql-client.ts   # 核心类
+        instance.ts         # 默认实例
+        types.ts
       qiniu/                # 七牛云服务
         QiniuUploader.ts    # 文件上传
         config.ts           # 配置
@@ -169,7 +170,7 @@ nextjs-template/
   - 统一使用英文小写+中划线（-），如 `route.ts`、`user-login/`。
   - API 路由按功能模块分子目录，每个路由目录包含 `route.ts`。
 - **工具库文件**：
-  - 统一使用英文小写+中划线（-），如 `hasura-graphql-client.ts`。
+  - 统一使用英文小写+中划线（-），如 `graphql-client/`。
   - 现已全部集中在 `config-lib/` 目录下。
 - **类型定义文件**：
   - 统一使用英文小写+中划线或下划线，自动生成类型为 `graphql.ts`，业务类型建议细分到 `tables/` 子目录。
@@ -183,7 +184,7 @@ nextjs-template/
 | 页面目录     | 小写+中划线        | user-center/              |
 | 页面文件     | 小写+中划线        | page.tsx, layout.tsx      |
 | API 路由     | 小写+中划线        | route.ts, user-login/     |
-| 工具库文件   | 小写+中划线        | hasura-graphql-client.ts  |
+| 工具库文件   | 小写+中划线        | graphql-client/           |
 | 类型定义文件 | 小写+中划线/下划线 | graphql.ts, tables/user.ts|
 | 配置文件     | 小写+中划线        | next.config.ts            |
 
@@ -203,17 +204,17 @@ nextjs-template/
 
 ### 1. API 路由用法
 
-**优先使用 `execute` 方法**，这是 graphql-ormify-client 推荐的方式，提供最大的灵活性：
+**使用自封装 GraphQL 客户端的 `execute` 方法**，支持类型安全与可选内存缓存（`cacheMs`）：
 
 ```ts
 // src/app/api/user/profile/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getHasuraClient } from '@/config-lib/hasura-graphql-client/hasura-graphql-client';
+import { getClient } from '@/config-lib/graphql-client';
 import type { Users } from '@/types/graphql';
 
 export async function GET(request: NextRequest) {
   try {
-    const client = getHasuraClient();
+    const client = getClient();
     const query = `
       query GetUsers {
         users(limit: 10, order_by: { created_at: desc }) {
@@ -262,14 +263,14 @@ export type UserFields = UserField[];
 
 ### 3. 页面组件用法
 
-**优先使用 `execute` 方法**执行 GraphQL 查询：
+**使用 `getClient().execute()` 执行 GraphQL 查询**：
 
 ```tsx
 // src/app/users/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getHasuraClient } from '@/config-lib/hasura-graphql-client/hasura-graphql-client';
+import { getClient } from '@/config-lib/graphql-client';
 import type { User } from '@/types/tables/user';
 
 export default function UsersPage() {
@@ -280,7 +281,7 @@ export default function UsersPage() {
     const fetchUsers = async () => {
       setLoading(true);
       try {
-        const client = getHasuraClient();
+        const client = getClient();
         const query = `
           query GetUsers {
             users(limit: 10, order_by: { created_at: desc }) {
@@ -451,9 +452,9 @@ export async function GET(request: NextRequest) {
 ## 内置功能特性
 
 ### 1. GraphQL 客户端
-- 基于 `graphql-ormify-client` 的类型安全 GraphQL 客户端
-- 支持查询、变更、订阅等操作
-- 内置缓存和请求监听
+- 自封装 `config-lib/graphql-client`：可多实例、`execute` 发请求、可选内存缓存（`cacheMs`）、请求/响应拦截器
+- 支持查询与变更，类型安全（泛型 `execute<T>`）
+- 默认实例通过 `getClient()` 或默认导出获取
 
 ### 2. 第三方服务集成
 - **阿里云短信服务**：支持短信发送
@@ -481,8 +482,8 @@ export async function GET(request: NextRequest) {
 
 - API 路由、类型、工具、页面结构建议严格按本规范组织，便于团队协作和维护。
 - 业务类型建议基于自动生成的 GraphQL 类型二次封装，字段名类型用 `keyof` 自动推导。
-- **GraphQL 请求优先使用 `execute` 方法**，提供最大的灵活性和类型安全，尽量不使用快捷方法（如 `datas`、`data` 等）。
-- GraphQL 客户端等统一用 config-lib/ 目录下工具。
+- **GraphQL 请求使用 config-lib/graphql-client**，通过 `getClient()` 或默认导出获取实例，用 `execute({ query, variables, cacheMs? })` 发请求。
+- 工具与配置统一放在 config-lib/ 目录下。
 - 文件上传优先使用客户端直传方式，减少服务器压力。
 - 每次后端 schema 变更后，务必同步类型。
 - 使用 Next.js App Router 的新特性，如服务端组件、流式渲染等。
@@ -659,7 +660,7 @@ NEXT_PUBLIC_APP_VERSION=1.0.0
 - **React**：19.1.0
 - **语言**：TypeScript 5
 - **样式**：Tailwind CSS 4
-- **GraphQL**：graphql-ormify-client 1.0.5
+- **GraphQL**：自封装 graphql-client（多实例、execute、可选缓存、拦截器）
 - **认证**：JWT (jsonwebtoken)
 - **存储**：七牛云 (qiniu)
 - **短信**：阿里云短信服务

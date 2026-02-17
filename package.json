@@ -12,7 +12,6 @@
   "dependencies": {
     "@alicloud/dysmsapi20170525": "^4.1.2",
     "@alicloud/openapi-client": "^0.4.14",
-    "graphql-ormify-client": "^1.0.5",
     "jsonwebtoken": "^9.0.2",
     "next": "^16.1.1",
     "proxy-agent": "^6.5.0",

@@ -100,7 +100,7 @@ export default function ApiTestPage() {
                 <li>• React 19.0.0</li>
                 <li>• TypeScript 5</li>
                 <li>• Tailwind CSS 4</li>
-                <li>• GraphQL (graphql-ormify-client)</li>
+                <li>• GraphQL (config-lib graphql-client)</li>
               </ul>
             </div>
             <div>

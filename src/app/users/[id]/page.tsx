@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getHasuraClient } from '@/config-lib/hasura-graphql-client/hasura-graphql-client';
+import { getClient } from '@/config-lib/graphql-client';
 import type { Users } from '@/types/graphql';
 
 export default function UserDetailPage() {
@@ -18,7 +18,7 @@ export default function UserDetailPage() {
     const fetchUser = async () => {
       try {
         setLoading(true);
-        const client = getHasuraClient();
+        const client = getClient();
         
         // 使用 GraphQL 查询获取单个用户数据
         const query = `
@@ -36,7 +36,7 @@ export default function UserDetailPage() {
           }
         `;
         
-        const result = await client.execute({
+        const result = await client.execute<{ users: Users[] }>({
           query,
           variables: {
             id: userId

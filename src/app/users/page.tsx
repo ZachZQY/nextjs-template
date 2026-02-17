@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getHasuraClient } from '@/config-lib/hasura-graphql-client/hasura-graphql-client';
+import { getClient } from '@/config-lib/graphql-client';
 import type { Users } from '@/types/graphql';
 
 export default function UsersPage() {
@@ -23,7 +23,7 @@ export default function UsersPage() {
     const fetchUsers = async () => {
       try {
         setLoading(true);
-        const client = getHasuraClient();
+        const client = getClient();
         
         // 使用 GraphQL 查询获取用户数据
         const query = `
@@ -41,7 +41,7 @@ export default function UsersPage() {
           }
         `;
         
-        const result = await client.execute({
+        const result = await client.execute<{ users: Users[] }>({
           query,
           variables: {
             limit: 50,
@@ -71,7 +71,7 @@ export default function UsersPage() {
     }
 
     try {
-      const client = getHasuraClient();
+      const client = getClient();
       
       const mutation = `
         mutation CreateUser($objects: [users_insert_input!]!) {
@@ -90,7 +90,7 @@ export default function UsersPage() {
         }
       `;
       
-      const result = await client.execute({
+      const result = await client.execute<{ insert_users: { returning: Users[] } }>({
         query: mutation,
         variables: {
           objects: [{
@@ -119,7 +119,7 @@ export default function UsersPage() {
         }
       `;
       
-      const refreshResult = await client.execute({
+      const refreshResult = await client.execute<{ users: Users[] }>({
         query,
         variables: {
           limit: 50,

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { getHasuraClient } from '@/config-lib/hasura-graphql-client/hasura-graphql-client';
+import { getClient } from '@/config-lib/graphql-client';
 import type { Users } from '@/types/graphql';
 
 interface QueryResult {
@@ -22,13 +22,13 @@ export default function GraphQLTestPage() {
 
   // 查询表单
   const [queryForm, setQueryForm] = useState({
-    userId: '3',
+    userId: '1',
     limit: '10',
   });
 
   // 变更表单
   const [mutationForm, setMutationForm] = useState({
-    userId: '3',
+    userId: '1',
     nickname: '',
     bio: '',
   });
@@ -39,7 +39,7 @@ export default function GraphQLTestPage() {
     setQueryResult(null);
 
     try {
-      const client = getHasuraClient();
+      const client = getClient();
       const userId = parseInt(queryForm.userId) || 3;
       const limit = parseInt(queryForm.limit) || 10;
 
@@ -108,7 +108,7 @@ export default function GraphQLTestPage() {
     setMutationResult(null);
 
     try {
-      const client = getHasuraClient();
+      const client = getClient();
       const userId = parseInt(mutationForm.userId) || 3;
 
       // 构建更新对象
