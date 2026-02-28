@@ -1,75 +1,76 @@
-import WechatPay from "wechatpay-node-v3";
 import crypto from "crypto";
-import { jsapiPayConfig } from "../config";
+
+const API_HOST = "https://api.mch.weixin.qq.com";
 
 /**
- * 微信支付JSAPI（小程序/公众号）通用支付工具类
- * 支持下单、退款、回调验签/解密，适用于所有APIv3回调（支付、退款、分账等）
- *
- * 用法示例：
- * const pay = new JsapiPay({ ...配置... });
- * const result = await pay.pay({ ... });
- * const refundResult = await pay.refund({ ... });
- * const callbackData = await pay.verifyCallback(rawBody, headers);
+ * 微信支付 直连商户 JSAPI 配置
  */
 export interface JsapiPayConfig {
   mchid: string;
   appid: string;
-  serial: string;
-  privateKey: string | Buffer;
-  apiv3Key: string;
+  cert_serial_no: string;
+  cert_private_key: string | Buffer;
+  apiv3_secret: string;
   notify_url: string;
+  notify_forward_url?: string;
+  skip_callback_verify?: boolean;
+  /** 微信支付公钥（PEM 内容），用于回调解密前验签（公钥模式） */
+  wechatpay_public_key?: string;
+}
+
+/** 直连 JSAPI 下单请求体（微信 API） */
+interface JsapiBody {
+  appid: string;
+  mchid: string;
+  description: string;
+  out_trade_no: string;
+  notify_url: string;
+  amount: { total: number; currency: string };
+  payer: { openid: string };
+  attach?: string;
+}
+
+/** 微信 attach 最大 127 字节，用短 key "f" 存 notify_forward_url */
+const ATTACH_MAX_LEN = 127;
+function buildAttachForForwardUrl(notifyForwardUrl: string): string | undefined {
+  const url = notifyForwardUrl.trim();
+  if (!url) return undefined;
+  const attach = JSON.stringify({ f: url });
+  return attach.length <= ATTACH_MAX_LEN ? attach : undefined;
+}
+
+/** 直连 JSAPI 下单返回（微信原始） */
+interface JsapiPrepayResponse {
+  prepay_id?: string;
+  code?: string;
+  message?: string;
+  [key: string]: unknown;
 }
 
 /**
- * 支付下单参数
+ * 调起支付参数（与 WeChatPay 组件 paymentData 一致）
  */
 export interface PayParams {
-  openid: string;
-  out_trade_no: string;
-  amount: number;
-  description: string;
+  timeStamp: string;
+  nonceStr: string;
+  package: string;
+  signType: string;
+  paySign: string;
+  appId?: string;
 }
 
-/**
- * 支付下单返回
- */
-export interface PayResult {
-  payParams: {
-    timeStamp: string;
-    nonceStr: string;
-    package: string;
-    signType: string;
-    paySign: string;
-    appId: string;
-  };
-  raw: any;
+/** 直连查询订单返回（含 trade_state、transaction_id 等） */
+export interface JsapiQueryResult {
+  trade_state?: string;
+  transaction_id?: string;
+  out_trade_no?: string;
+  amount?: { total?: number; payer_total?: number; currency?: string };
+  payer?: { openid?: string };
+  [key: string]: unknown;
 }
 
-/**
- * 退款参数
- */
-export interface RefundParams {
-  out_trade_no: string;
-  refund_no: string;
-  refund_amount: number;
-  total_amount: number;
-  reason?: string;
-}
-
-/**
- * 退款返回
- */
-export interface RefundResult {
-  raw: any;
-}
-
-/**
- * 微信支付APIv3回调返回结构（通用，适用于支付、退款、分账等）
- * resource为已解密业务数据，字段随event_type不同而不同
- */
+/** 直连回调验签解密结果 */
 export interface WxPayCallbackResource {
-  // 支付成功
   original_type?: string;
   appid?: string;
   mchid?: string;
@@ -88,150 +89,266 @@ export interface WxPayCallbackResource {
     currency: string;
     payer_currency: string;
   };
-  // 退款成功
   out_refund_no?: string;
   refund_id?: string;
   refund_status?: string;
   refund_success_time?: string;
-  refund_recv_accout?: string;
-  refund_account?: string;
-  refund_request_source?: string;
-  refund_channel?: string;
-  refund_fee?: number;
+  [key: string]: unknown;
 }
 
-/**
- * 微信支付APIv3回调resource业务数据结构（常用字段，实际字段以微信文档为准）
- */
 export interface WxPayCallbackResult {
   id: string;
   create_time: string;
-  event_type: string; // 如 TRANSACTION.SUCCESS, REFUND.SUCCESS
+  event_type: string;
   resource_type: string;
   summary: string;
   resource: WxPayCallbackResource;
 }
 
-export class JsapiPay {
-  private client: any;
-  private config: JsapiPayConfig;
+/** 直连退款参数 */
+export interface JsapiRefundParams {
+  out_trade_no: string;
+  out_refund_no: string;
+  refund_amount: number;
+  total_amount: number;
+  reason?: string;
+}
 
-  constructor(config: JsapiPayConfig = jsapiPayConfig) {
-    this.config = config;
-    this.client = new (WechatPay as any)({
-      mchid: config.mchid,
-      serial: config.serial,
-      privateKey: Buffer.isBuffer(config.privateKey)
-        ? config.privateKey
-        : Buffer.from(config.privateKey),
-      apiv3Key: config.apiv3Key,
-    });
-  }
+function normalizePrivateKey(privateKey: string | Buffer): string {
+  if (Buffer.isBuffer(privateKey)) return privateKey.toString("utf8").replace(/\\n/g, "\n").trim();
+  const s = String(privateKey).replace(/\\n/g, "\n").trim();
+  return s.includes("-----") ? s : `-----BEGIN PRIVATE KEY-----\n${s}\n-----END PRIVATE KEY-----`;
+}
 
-  /**
-   * 微信小程序/公众号支付下单，返回前端调起支付参数和微信原始返回，自动生成订单号（如未传）
-   * @param params 支付参数，out_trade_no可选
-   * @returns { payParams, raw, out_trade_no } payParams给前端，raw为微信原始返回，out_trade_no为本次订单号
-   */
-  async pay(
-    params: Omit<PayParams, "out_trade_no"> & { out_trade_no?: string }
-  ): Promise<PayResult & { out_trade_no: string }> {
-    const out_trade_no = params.out_trade_no || JsapiPay.generateOrderNo();
-    const result = await this.client.transactions_jsapi({
-      appid: this.config.appid,
-      mchid: this.config.mchid,
-      description: params.description,
-      out_trade_no,
-      notify_url: this.config.notify_url,
-      amount: { total: params.amount, currency: "CNY" },
-      payer: { openid: params.openid },
-    });
-    const prepay_id = result?.prepay_id || result?.data?.prepay_id;
-    return {
-      payParams: this.buildPayParams(prepay_id),
-      raw: result,
-      out_trade_no,
-    };
-  }
+function signWithPrivateKey(str: string, privateKey: string | Buffer): string {
+  const sign = crypto.createSign("RSA-SHA256");
+  sign.update(str);
+  sign.end();
+  return sign.sign(normalizePrivateKey(privateKey), "base64");
+}
 
-  /**
-   * 生成唯一订单号（静态方法）
-   * 格式如 WX2024062612345678901234
-   */
-  static generateOrderNo(): string {
-    return "WX" + Date.now() + Math.floor(Math.random() * 1000000);
-  }
+function buildAuth(config: JsapiPayConfig, method: string, urlPath: string, body?: string): string {
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const nonceStr = crypto.randomBytes(16).toString("hex");
+  const signStr = body != null ? `${method}\n${urlPath}\n${timestamp}\n${nonceStr}\n${body}\n` : `${method}\n${urlPath}\n${timestamp}\n${nonceStr}\n\n`;
+  const signature = signWithPrivateKey(signStr, config.cert_private_key);
+  return `WECHATPAY2-SHA256-RSA2048 mchid="${config.mchid}",nonce_str="${nonceStr}",signature="${signature}",timestamp="${timestamp}",serial_no="${config.cert_serial_no}"`;
+}
 
-  /**
-   * 微信退款
-   * @param params 退款参数
-   * @returns { raw } 微信原始退款返回
-   */
-  async refund(params: RefundParams): Promise<RefundResult> {
-    const result = await this.client.refunds({
-      out_trade_no: params.out_trade_no,
-      out_refund_no: params.refund_no,
-      reason: params.reason || "用户申请退款",
-      amount: {
-        refund: params.refund_amount,
-        total: params.total_amount,
-        currency: "CNY",
-      },
-      notify_url: this.config.notify_url,
-    });
-    return { raw: result };
-  }
+/** AES-256-GCM 解密（与微信回调 resource 格式一致） */
+function decipherGcm(
+  ciphertextBase64: string,
+  associatedData: string,
+  nonce: string,
+  apiv3Key: string
+): Record<string, unknown> {
+  const keyBuf = Buffer.from(apiv3Key, "utf8");
+  if (keyBuf.length !== 32) throw new Error(`wxpay_apiv3_secret 须为 32 字节，当前 ${keyBuf.length} 字节`);
+  const raw = Buffer.from(ciphertextBase64, "base64");
+  const authTag = raw.subarray(raw.length - 16);
+  const data = raw.subarray(0, raw.length - 16);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", keyBuf, Buffer.from(nonce, "utf8"));
+  decipher.setAuthTag(authTag);
+  decipher.setAAD(Buffer.from(associatedData, "utf8"));
+  const decoded = decipher.update(data, undefined, "utf8") + decipher.final("utf8");
+  return JSON.parse(decoded) as Record<string, unknown>;
+}
 
-  /**
-   * 微信支付/退款/分账等APIv3回调验签与解密（通用）
-   * @param rawBody 微信回调原始body（string）
-   * @param headers 微信回调请求头（Record<string, string>）
-   * @returns WxPayCallbackResult 结构，resource为已解密业务数据
-   * @example
-   * const data = await pay.verifyCallback(rawBody, headers);
-   * // data.event_type === 'TRANSACTION.SUCCESS' 支付成功
-   * // data.event_type === 'REFUND.SUCCESS' 退款成功
-   * // data.resource 业务数据
-   */
-  async verifyCallback(
-    rawBody: string,
-    headers: Record<string, string>
-  ): Promise<WxPayCallbackResult> {
-    return await this.client.callbackNotify(rawBody, headers);
-  }
+function verifySignWithPublicKey(
+  timestamp: string,
+  nonce: string,
+  body: string,
+  signature: string,
+  publicKeyPem: string
+): boolean {
+  const pem = publicKeyPem.replace(/\\n/g, "\n").trim();
+  const str = `${timestamp}\n${nonce}\n${body}\n`;
+  return crypto.createVerify("RSA-SHA256").update(str, "utf8").verify(pem, signature, "base64");
+}
 
-  /**
-   * 生成前端调起支付参数（内部）
-   */
-  private buildPayParams(prepayId: string) {
-    const appid = this.config.appid;
-    const privateKey = this.config.privateKey;
-    const timeStamp = Math.floor(Date.now() / 1000).toString();
-    const nonceStr = Math.random().toString(36).substr(2, 15);
-    const pkg = `prepay_id=${prepayId}`;
-    const signType = "RSA";
-    const signStr = `${appid}\n${timeStamp}\n${nonceStr}\n${pkg}\n`;
-    const paySign = JsapiPay.signWithPrivateKey(signStr, privateKey);
-    return {
-      timeStamp,
-      nonceStr,
-      package: pkg,
-      signType,
-      paySign,
-      appId: appid,
-    };
-  }
+function generateOrderNo(): string {
+  return "WX" + Date.now() + Math.floor(Math.random() * 1000000);
+}
 
-  /**
-   * RSA-SHA256签名工具（内部）
-   */
-  private static signWithPrivateKey(
-    str: string,
-    privateKey: string | Buffer
-  ): string {
-    const sign = crypto.createSign("RSA-SHA256");
-    sign.update(str);
-    sign.end();
-    return sign.sign(privateKey, "base64");
+/**
+ * 直连商户 JSAPI 下单
+ * 返回 paymentData 可直接给 WeChatPay 组件使用
+ */
+export async function jsapiPrepay(
+  config: JsapiPayConfig,
+  params: {
+    openid: string;
+    amount: number;
+    description: string;
+    out_trade_no?: string;
+    appid?: string;
+    notify_url?: string;
+    /** 下单时传入则写入 attach，回调时优先转发到此 URL（attach 限 127 字节，超长则忽略） */
+    notify_forward_url?: string;
   }
+): Promise<{ paymentData: string; payParams: PayParams; out_trade_no: string }> {
+  const out_trade_no = params.out_trade_no || generateOrderNo();
+  const appid = (params.appid?.trim() || config.appid) as string;
+  const notifyUrl = params.notify_url?.trim() || config.notify_url;
+  const urlPath = "/v3/pay/transactions/jsapi";
+  const body: JsapiBody = {
+    appid,
+    mchid: config.mchid,
+    description: params.description,
+    out_trade_no,
+    notify_url: notifyUrl,
+    amount: { total: params.amount, currency: "CNY" },
+    payer: { openid: params.openid },
+  };
+  const attach = buildAttachForForwardUrl(params.notify_forward_url ?? "");
+  if (attach) body.attach = attach;
+  const bodyStr = JSON.stringify(body);
+  const token = buildAuth(config, "POST", urlPath, bodyStr);
+  const res = await fetch(`${API_HOST}${urlPath}`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: token,
+    },
+    body: bodyStr,
+  });
+  const result = (await res.json()) as JsapiPrepayResponse;
+  if (!res.ok || result.code) {
+    throw new Error(String(result.message || result.code || res.statusText));
+  }
+  const prepay_id = result.prepay_id;
+  if (!prepay_id) throw new Error("微信未返回 prepay_id");
+
+  const timeStamp = Math.floor(Date.now() / 1000).toString();
+  const nonceStr = crypto.randomBytes(16).toString("hex");
+  const pkg = `prepay_id=${prepay_id}`;
+  const paySignStr = `${appid}\n${timeStamp}\n${nonceStr}\n${pkg}\n`;
+  const paySign = signWithPrivateKey(paySignStr, config.cert_private_key);
+  const payParams: PayParams = {
+    timeStamp,
+    nonceStr,
+    package: pkg,
+    signType: "RSA",
+    paySign,
+    appId: appid,
+  };
+  const paymentData = JSON.stringify({
+    appId: payParams.appId,
+    timeStamp: payParams.timeStamp,
+    nonceStr: payParams.nonceStr,
+    package: payParams.package,
+    signType: payParams.signType,
+    paySign: payParams.paySign,
+  });
+  return { paymentData, payParams, out_trade_no };
+}
+
+/**
+ * 直连商户 查询订单状态
+ */
+export async function jsapiQueryOrder(
+  config: JsapiPayConfig,
+  params: { out_trade_no: string }
+): Promise<JsapiQueryResult> {
+  const urlPath = `/v3/pay/transactions/out-trade-no/${encodeURIComponent(params.out_trade_no)}?mchid=${config.mchid}`;
+  const token = buildAuth(config, "GET", urlPath);
+  const res = await fetch(`${API_HOST}${urlPath}`, {
+    method: "GET",
+    headers: { Accept: "application/json", Authorization: token },
+  });
+  const result = (await res.json()) as JsapiQueryResult & { code?: string; message?: string };
+  if (!res.ok || result.code) {
+    throw new Error(String(result.message || result.code || res.statusText));
+  }
+  return result as JsapiQueryResult;
+}
+
+/**
+ * 直连商户 回调验签与解密
+ * 验签：若配置了 wechatpay_public_key 则用本地公钥验签；若 skip_callback_verify 则只解密。
+ */
+export async function jsapiVerifyCallback(
+  config: JsapiPayConfig,
+  rawBody: string,
+  headers: Record<string, string>
+): Promise<WxPayCallbackResult> {
+  const body = JSON.parse(rawBody) as Record<string, unknown>;
+  const resource = body.resource as { ciphertext: string; associated_data?: string; nonce: string };
+  if (!resource?.ciphertext || !resource?.nonce) {
+    throw new Error("回调 body.resource 不完整");
+  }
+  const keyLen = Buffer.byteLength(config.apiv3_secret, "utf8");
+  if (keyLen !== 32) {
+    throw new Error(
+      `wxpay_apiv3_secret 必须为 32 字节（通常为 32 个字符），当前为 ${keyLen} 字节。请检查商户平台「API 安全」中的 APIv3 密钥`
+    );
+  }
+  if (!config.skip_callback_verify) {
+    const timestamp = headers["wechatpay-timestamp"];
+    const nonce = headers["wechatpay-nonce"];
+    const signature = headers["wechatpay-signature"];
+    if (!timestamp || !nonce || !signature) {
+      throw new Error("回调头不完整（验签需要 Wechatpay-Timestamp/Nonce/Signature）");
+    }
+    const pubKey = config.wechatpay_public_key?.replace(/\\n/g, "\n").trim();
+    if (!pubKey) {
+      throw new Error(
+        "未配置 wechatpay_public_key 且未开启 skip_callback_verify。请配置 wxpay_wechatpay_public_key（PEM 内容）或设置 wxpay_skip_callback_verify=true"
+      );
+    }
+    const ok = verifySignWithPublicKey(timestamp, nonce, rawBody, signature, pubKey);
+    if (!ok) throw new Error("回调验签失败");
+  }
+  const decrypted = decipherGcm(
+    resource.ciphertext,
+    resource.associated_data ?? "",
+    resource.nonce,
+    config.apiv3_secret
+  );
+  return {
+    id: String(body.id ?? ""),
+    create_time: String(body.create_time ?? ""),
+    event_type: String(body.event_type ?? ""),
+    resource_type: String(body.resource_type ?? ""),
+    summary: String(body.summary ?? ""),
+    resource: decrypted as WxPayCallbackResource,
+  };
+}
+
+/**
+ * 直连商户 退款（V3 退款接口，需证书）
+ */
+export async function jsapiRefund(
+  config: JsapiPayConfig,
+  params: JsapiRefundParams
+): Promise<{ refund_id?: string; [key: string]: unknown }> {
+  const urlPath = "/v3/refund/domestic/refunds";
+  const body = {
+    out_trade_no: params.out_trade_no,
+    out_refund_no: params.out_refund_no,
+    reason: params.reason || "用户申请退款",
+    amount: {
+      refund: params.refund_amount,
+      total: params.total_amount,
+      currency: "CNY" as const,
+    },
+    notify_url: config.notify_url,
+  };
+  const bodyStr = JSON.stringify(body);
+  const token = buildAuth(config, "POST", urlPath, bodyStr);
+  const res = await fetch(`${API_HOST}${urlPath}`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: token,
+    },
+    body: bodyStr,
+  });
+  const result = (await res.json()) as Record<string, unknown> & { code?: string; message?: string };
+  if (!res.ok || result.code) {
+    throw new Error(String(result.message || result.code || res.statusText));
+  }
+  return result;
 }

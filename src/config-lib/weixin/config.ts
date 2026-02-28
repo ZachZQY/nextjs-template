@@ -1,33 +1,52 @@
 import { WxAuthConfig } from "./miniprogram/WxAuth";
 import { JsapiPayConfig } from "./pay/JsapiPay";
+import type { PartnerJsapiPayConfig } from "./pay/PartnerJsapiPay";
 export type { WxAuthConfig, JsapiPayConfig };
 
 /**
  * 微信小程序配置
- * @param appId 微信小程序appId
- * @param appSecret 微信小程序appSecret
  */
 export const wxAuthConfig: WxAuthConfig = {
   appId: process.env.WX_APP_ID || "",
   appSecret: process.env.WX_APP_SECRET || "",
 };
 
+/** 直连：微信支付公钥为证书内容（字符串），非路径 */
+const wxpayPublicKey = process.env.wxpay_wechatpay_public_key?.replace(/\\n/g, "\n").trim() || undefined;
+
 /**
- * 微信支付配置
- * @param mchid 微信支付商户号
- * @param appid 微信支付appid
- * @param serial 微信支付证书序列号
- * @param privateKey 微信支付证书私钥
- * @param apiv3Key 微信支付apiv3密钥
- * @param notify_url 微信支付回调地址
+ * 微信支付配置（直连商户）
+ * 环境变量前缀：wxpay_*
  */
 export const jsapiPayConfig: JsapiPayConfig = {
-  mchid: process.env.WX_PAY_MCHID || "",
-  appid: process.env.WX_PAY_APPID || "",
-  serial: process.env.WX_PAY_SERIAL || "",
-  privateKey: process.env.WX_PAY_PRIVATE_KEY || "",
-  apiv3Key: process.env.WX_PAY_APIV3_KEY || "",
-  notify_url: process.env.WX_PAY_NOTIFY_URL || "",
+  mchid: process.env.wxpay_mchid || "",
+  appid: process.env.wxpay_appid || "",
+  cert_serial_no: process.env.wxpay_cert_serial_no || "",
+  cert_private_key: process.env.wxpay_cert_private_key || "",
+  apiv3_secret: process.env.wxpay_apiv3_secret || "",
+  notify_url: process.env.wxpay_notify_url || "",
+  notify_forward_url: process.env.wxpay_notify_forward_url || "",
+  skip_callback_verify: process.env.wxpay_skip_callback_verify === "true",
+  wechatpay_public_key: wxpayPublicKey,
 };
 
+/** 服务商：微信支付公钥为证书内容（字符串），非路径 */
+const wxpaySpPublicKey = process.env.wxpay_sp_wechatpay_public_key?.replace(/\\n/g, "\n").trim() || undefined;
 
+/**
+ * 微信支付 服务商模式 配置
+ * 环境变量前缀：wxpay_sp_*
+ */
+export const partnerJsapiPayConfig: PartnerJsapiPayConfig = {
+  sp_mchid: process.env.wxpay_sp_mchid || "",
+  sp_appid: process.env.wxpay_sp_appid || "",
+  sp_cert_serial_no: process.env.wxpay_sp_cert_serial_no || "",
+  sp_cert_private_key: process.env.wxpay_sp_cert_private_key || "",
+  sp_apiv3_secret: process.env.wxpay_sp_apiv3_secret || "",
+  api_host: "https://api.mch.weixin.qq.com",
+  notify_url: process.env.wxpay_sp_notify_url || "",
+  notify_forward_url: process.env.wxpay_sp_notify_forward_url || "",
+  skip_callback_verify: process.env.wxpay_sp_skip_callback_verify === "true",
+  wechatpay_serial: process.env.wxpay_sp_wechatpay_serial?.trim() || undefined,
+  wechatpay_public_key: wxpaySpPublicKey,
+};
