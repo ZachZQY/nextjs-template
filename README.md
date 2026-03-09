@@ -664,7 +664,7 @@ NEXT_PUBLIC_APP_VERSION=1.0.0
 - **认证**：JWT (jsonwebtoken)
 - **存储**：七牛云 (qiniu)
 - **短信**：阿里云短信服务
-- **支付**：微信支付 (wechatpay-node-v3)
+- **支付**：微信支付（自封装 JsapiPay / PartnerJsapiPay，基于 crypto 签名）
 
 > **注意**：项目已升级到 Next.js 16，已启用 Turbopack 作为默认打包器，支持 React 19 新特性。在 API 路由中使用 `cookies()`、`headers()` 等 API 时需要使用 `await`。
 
